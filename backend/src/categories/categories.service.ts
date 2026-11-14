@@ -22,6 +22,9 @@ export class CategoriesService {
 
   async create(createCategoryDto: CreateCategoryDto): Promise<any> {
     const { name, parentCategory } = createCategoryDto;
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new BadRequestException('Category name is required');
+    }
     const normalizedName = name.trim().toLowerCase();
     // 1- Check if parentCategory exists
     if (parentCategory) {
@@ -90,9 +93,13 @@ export class CategoriesService {
 
     const categoryMap = new Map<
       string,
-      { _id: any; name: string; children: any[] }
+      { _id: any; name: string | undefined; children: any[] }
     >();
-    const result: Array<{ _id: any; name: string; children: any[] }> = [];
+    const result: Array<{
+      _id: any;
+      name: string | undefined;
+      children: any[];
+    }> = [];
     // 1. Create a node for every category
     for (const category of categories) {
       categoryMap.set(category._id.toString(), {
@@ -184,7 +191,8 @@ export class CategoriesService {
     }
 
     // 3- Normalize name
-    const normalizedName = name !== undefined ? name.trim() : category.name;
+    const normalizedName: string | undefined =
+      name !== undefined ? name.trim() : category.name;
 
     // 4- Check duplicate name
     if (name !== undefined || parentCategory !== undefined) {
@@ -205,7 +213,7 @@ export class CategoriesService {
 
     // 5- Generate slug if name changed
     if (name !== undefined && normalizedName !== category.name) {
-      const baseSlug = normalizedName
+      const baseSlug = name
         .toLowerCase()
         .trim()
         .replace(/[^\p{L}\p{N}]+/gu, '-')
