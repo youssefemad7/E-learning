@@ -24,13 +24,13 @@ E-Learning is a full-stack web application inspired by modern online learning pl
 
 ## Tech Stack
 
-| Layer | Technologies |
-|---|---|
-| Frontend | React, TypeScript, Vite |
-| Backend | NestJS, TypeScript |
-| Database | MongoDB, Mongoose |
-| Authentication | JWT, Passport.js, bcrypt |
-| Validation | class-validator, class-transformer |
+| Layer          | Technologies                       |
+| -------------- | ---------------------------------- |
+| Frontend       | React, TypeScript, Vite            |
+| Backend        | NestJS, TypeScript                 |
+| Database       | MongoDB, Mongoose                  |
+| Authentication | JWT, Passport.js, bcrypt           |
+| Validation     | class-validator, class-transformer |
 
 ## Project Structure
 
@@ -47,11 +47,11 @@ E-learning/
 - [x] Backend core setup
 - [x] Authentication and user management
 - [x] Categories module
-- [ ] Courses module
+- [x] Courses module
 - [ ] Frontend and backend integration
 - [ ] Testing
 - [ ] Deployment
 
 ---
 
-*This project is actively under development. Features and documentation will be updated as development progresses.*
+_This project is actively under development. Features and documentation will be updated as development progresses._
