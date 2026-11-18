@@ -4,12 +4,14 @@ import { CoursesController } from './courses.controller';
 import { CoursesService } from './courses.service';
 import { Course, CourseSchema } from './course.schema';
 import { Category, CategorySchema } from '../categories/category.schema';
+import { Enrollment, EnrollmentSchema } from '../enrollments/enrollment.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Course.name, schema: CourseSchema },
       { name: Category.name, schema: CategorySchema },
+      { name: Enrollment.name, schema: EnrollmentSchema },
     ]),
   ],
   controllers: [CoursesController],

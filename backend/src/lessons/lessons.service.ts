@@ -13,14 +13,11 @@ import { CreateLessonDto } from './create-lesson.dto';
 import { CourseStatus } from '../courses/course.schema';
 import { UpdateLessonDto } from './update-lesson.dto';
 
-// import { CoursesService } from '../courses/courses.service';
-
 @Injectable()
 export class LessonsService {
   constructor(
     @InjectModel(Course.name) private courseModel: Model<Course>,
     @InjectModel(Lesson.name) private readonly lessonModel: Model<Lesson>,
-    // private coursesService: CoursesService,
   ) {}
   // Create a new lesson:
   // - Verify that the course exists.

@@ -13,11 +13,13 @@ import { CreateCourseDto } from './create-course.dto';
 import { CourseStatus } from './course.schema';
 import { UserRole } from '../users/user.schema';
 import { UpdateCourseDto } from './update-course.dto';
+import { Enrollment } from '../enrollments/enrollment.schema';
 @Injectable()
 export class CoursesService {
   constructor(
     @InjectModel(Course.name) private courseModel: Model<Course>,
     @InjectModel(Category.name) private readonly categoryModel: Model<Category>,
+    @InjectModel(Enrollment.name) private enrollmentModel: Model<Enrollment>,
   ) {}
 
   // Create a new course:
@@ -408,7 +410,16 @@ export class CoursesService {
     if (!course) {
       throw new NotFoundException('Course not found');
     }
+
     // Check if the course has related enrollments (this part is not implemented in the provided code)
+    const enrollment = await this.enrollmentModel.findOne({
+      course: id,
+    });
+    if (enrollment) {
+      throw new ConflictException(
+        'You are not allowed to delete this course because there is enrollment',
+      );
+    }
     // Check if the user is the owner of the course or an Admin
     if (
       course.instructor.toString() === user.userId ||
