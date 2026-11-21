@@ -12,12 +12,14 @@ import { UserRole } from '../users/user.schema';
 import { CreateLessonDto } from './create-lesson.dto';
 import { CourseStatus } from '../courses/course.schema';
 import { UpdateLessonDto } from './update-lesson.dto';
+import { EnrollmentsService } from '../enrollments/enrollments.service';
 
 @Injectable()
 export class LessonsService {
   constructor(
     @InjectModel(Course.name) private courseModel: Model<Course>,
     @InjectModel(Lesson.name) private readonly lessonModel: Model<Lesson>,
+    private readonly enrollmentsService: EnrollmentsService,
   ) {}
   // Create a new lesson:
   // - Verify that the course exists.
@@ -180,11 +182,11 @@ export class LessonsService {
     };
   }
 
-  // Find a specific lesson:
-  // - Verify that the lesson exists.
-  // - Return the lesson.
-  async findOneLesson(lessonId: string) {
-    // 1. Verify that the lesson exists.
+  // Find a specific lesson and enforce its access policy.
+  async findOneLesson(
+    lessonId: string,
+    user: { userId: string; role: UserRole },
+  ) {
     if (!lessonId || !mongoose.isValidObjectId(lessonId)) {
       throw new BadRequestException('Invalid Lesson ID');
     }
@@ -194,6 +196,54 @@ export class LessonsService {
     if (!lesson) {
       throw new NotFoundException('Lesson not found');
     }
+
+    const course = await this.courseModel.findById(lesson.course);
+
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    // Admin can access every lesson.
+    if (user.role === UserRole.ADMIN) {
+      return lesson;
+    }
+
+    // The course owner can access all lessons in their course.
+    if (
+      user.role === UserRole.INSTRUCTOR &&
+      user.userId === course.instructor.toString()
+    ) {
+      return lesson;
+    }
+
+    // All other access requires a published course.
+
+    if (course.status !== CourseStatus.PUBLISHED) {
+      throw new ForbiddenException('This course is not available');
+    }
+
+    // Only students can access preview lessons without enrollment.
+    if (user.role !== UserRole.STUDENT) {
+      throw new ForbiddenException(
+        'You are not allowed to access this lesson',
+      );
+    }
+
+    if (lesson.isPreview) {
+      return lesson;
+    }
+
+    const hasEnrollment = await this.enrollmentsService.checkEnrollment(
+      course._id.toString(),
+      user.userId,
+    );
+
+    if (!hasEnrollment) {
+      throw new ForbiddenException(
+        'You must enroll in this course to access this lesson',
+      );
+    }
+
     return lesson;
   }
 
@@ -220,7 +270,15 @@ export class LessonsService {
     if (!course) {
       throw new NotFoundException('Course not found');
     }
-    const lesson = await this.findOneLesson(lessonId);
+    if (!lessonId || !mongoose.isValidObjectId(lessonId)) {
+      throw new BadRequestException('Invalid Lesson ID');
+    }
+
+    const lesson = await this.lessonModel.findById(lessonId);
+
+    if (!lesson) {
+      throw new NotFoundException('Lesson not found');
+    }
     if (lesson.course.toString() !== courseId) {
       throw new NotFoundException('Lesson not found in this course');
     }
@@ -311,7 +369,15 @@ export class LessonsService {
     }
 
     // 2. Verify that the lesson exists and belongs to this course.
-    const lesson = await this.findOneLesson(lessonId);
+    if (!lessonId || !mongoose.isValidObjectId(lessonId)) {
+      throw new BadRequestException('Invalid Lesson ID');
+    }
+
+    const lesson = await this.lessonModel.findById(lessonId);
+
+    if (!lesson) {
+      throw new NotFoundException('Lesson not found');
+    }
 
     if (lesson.course.toString() !== courseId) {
       throw new NotFoundException('Lesson not found in this course');
