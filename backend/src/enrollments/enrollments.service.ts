@@ -265,6 +265,13 @@ export class EnrollmentsService {
       });
     } catch (error) {
       if ((error as { code?: number })?.code === 11000) {
+        const existingEnrollment = await this.enrollmentModel.findOne({
+          student: user.userId,
+          course: courseId,
+        });
+        if (existingEnrollment) {
+          return existingEnrollment;
+        }
         throw new ConflictException('You are already enrolled in this course');
       }
       throw error;

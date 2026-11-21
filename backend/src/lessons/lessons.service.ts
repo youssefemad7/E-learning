@@ -21,6 +21,34 @@ export class LessonsService {
     @InjectModel(Lesson.name) private readonly lessonModel: Model<Lesson>,
     private readonly enrollmentsService: EnrollmentsService,
   ) {}
+
+  private async requestReviewAfterInstructorEdit(
+    course: Course,
+    user: { userId: string; role: UserRole },
+  ) {
+    if (
+      user.role !== UserRole.INSTRUCTOR ||
+      user.userId !== course.instructor.toString() ||
+      course.status !== CourseStatus.PUBLISHED
+    ) {
+      return;
+    }
+
+    await this.courseModel.updateOne(
+      {
+        _id: course._id,
+        instructor: user.userId,
+        status: CourseStatus.PUBLISHED,
+      },
+      {
+        $set: {
+          status: CourseStatus.PENDING_REVIEW,
+          rejectionReason: null,
+        },
+      },
+    );
+  }
+
   // Create a new lesson:
   // - Verify that the course exists.
   // - Verify that the authenticated user owns the course.
@@ -100,6 +128,7 @@ export class LessonsService {
       lessonOrder,
     });
 
+    await this.requestReviewAfterInstructorEdit(course, user);
     return createdLesson;
   }
 
@@ -340,9 +369,15 @@ export class LessonsService {
       lesson.isPreview = isPreview;
     }
 
-    // 6. Create and save the lesson.
+    // 6. Save the lesson and request review only when content actually changed.
+    const hasChanges = lesson.isModified();
+    const updatedLesson = await lesson.save();
 
-    return await lesson.save();
+    if (hasChanges) {
+      await this.requestReviewAfterInstructorEdit(course, user);
+    }
+
+    return updatedLesson;
   }
 
   // Delete a specific lesson:
@@ -441,6 +476,7 @@ export class LessonsService {
       }
     }
 
+    await this.requestReviewAfterInstructorEdit(course, user);
     return deletedLesson;
   }
 
@@ -525,6 +561,10 @@ export class LessonsService {
       { course: courseId, section: oldSec },
       { $set: { section: newSec } },
     );
+
+    if (result.modifiedCount > 0) {
+      await this.requestReviewAfterInstructorEdit(course, user);
+    }
 
     return {
       message: 'Section renamed successfully',
@@ -614,6 +654,10 @@ export class LessonsService {
     }
 
     // 9. Return the result.
+    if (modifiedCount > 0) {
+      await this.requestReviewAfterInstructorEdit(course, user);
+    }
+
     return {
       message: 'Sections reordered successfully',
       modifiedCount,
@@ -721,6 +765,10 @@ export class LessonsService {
     }
 
     // 10. Return the result.
+    if (modifiedCount > 0) {
+      await this.requestReviewAfterInstructorEdit(course, user);
+    }
+
     return {
       message: 'Lessons reordered successfully',
       modifiedCount,

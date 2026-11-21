@@ -13,7 +13,6 @@ type AuthUser = {
 type AuthResponse = {
   user: AuthUser;
   access_token: string;
-  refresh_token: string;
 };
 
 type RefreshResponse = {
@@ -98,10 +97,8 @@ export async function register(
   role: "student" | "instructor",
 ): Promise<AuthResponse> {
   const data = { name, email, password, role };
-  const {
-    data: { user, access_token, refresh_token },
-  } = await apiAuth.post<AuthResponse>("/auth/register", data);
-  return { user, access_token, refresh_token };
+  const { data } = await apiAuth.post<AuthResponse>("/auth/register", data);
+  return data;
 }
 // POST /auth/login
 // تستقبل email وpassword، وتبعتهم للباك، وترجع بيانات تسجيل الدخول.
@@ -110,10 +107,8 @@ export async function login(
   password: string,
 ): Promise<AuthResponse> {
   const data = { email, password };
-  const {
-    data: { user, access_token, refresh_token },
-  } = await apiAuth.post<AuthResponse>("/auth/login", data);
-  return { user, access_token, refresh_token };
+  const { data } = await apiAuth.post<AuthResponse>("/auth/login", data);
+  return data;
 }
 // POST /auth/refresh
 // تطلب تجديد الـ tokens لما الـ access token ينتهي.

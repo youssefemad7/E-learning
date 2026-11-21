@@ -191,14 +191,25 @@ export class CategoriesService {
     }
 
     // 3- Normalize name
-    const normalizedName: string | undefined =
-      name !== undefined ? name.trim() : category.name;
+    if (name !== undefined && !name.trim()) {
+      throw new BadRequestException('Category name cannot be empty');
+    }
 
-    // 4- Check duplicate name
+    const displayName = name !== undefined ? name.trim() : category.name;
+    const normalizedName: string =
+      name !== undefined
+        ? name.trim().toLowerCase()
+        : (category.normalizedName ?? category.name?.trim().toLowerCase() ?? '');
+
+    if (!normalizedName) {
+      throw new BadRequestException('Category name cannot be empty');
+    }
+
+    // 4- Check duplicate name using the same normalized field as creation.
     if (name !== undefined || parentCategory !== undefined) {
       const existingName = await this.categoryModel.findOne({
         _id: { $ne: category._id },
-        name: normalizedName,
+        normalizedName,
         parentCategory: effectiveParentId
           ? new Types.ObjectId(effectiveParentId)
           : null,
@@ -212,8 +223,8 @@ export class CategoriesService {
     }
 
     // 5- Generate slug if name changed
-    if (name !== undefined && normalizedName !== category.name) {
-      const baseSlug = name
+    if (name !== undefined && displayName !== category.name) {
+      const baseSlug = normalizedName
         .toLowerCase()
         .trim()
         .replace(/[^\p{L}\p{N}]+/gu, '-')
@@ -243,8 +254,9 @@ export class CategoriesService {
 
     // 6- Update only provided fields
     if (name !== undefined) {
-      category.name = normalizedName;
+      category.name = displayName!;
     }
+    category.normalizedName = normalizedName;
 
     if (description !== undefined) {
       category.description = description;

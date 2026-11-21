@@ -1,10 +1,13 @@
 import mongoose, { Model } from 'mongoose';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
-  ConflictException,
+  OnModuleDestroy,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -15,8 +18,14 @@ import { UserRole } from '../users/user.schema';
 import { Course, CourseStatus } from '../courses/course.schema';
 import { CreatePaymentDto } from './create-payment.dto';
 
+const PAYMENT_EXPIRATION_MS = 30 * 60 * 1000;
+const EXPIRATION_CHECK_INTERVAL_MS = 60 * 1000;
+
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PaymentsService.name);
+  private expirationInterval?: NodeJS.Timeout;
+
   constructor(
     @InjectModel(Payment.name) private paymentModel: Model<Payment>,
     @InjectModel(Course.name) private courseModel: Model<Course>,
@@ -24,24 +33,66 @@ export class PaymentsService {
     private enrollmentsService: EnrollmentsService,
   ) {}
 
-  // Validate the student and course.
-  // Prevent payment for free or unpublished courses.
-  // Check for an existing active enrollment.
-  // Create a pending Payment using the current course price.
-  // Request a Paymob Intention.
-  // Save the Paymob references and return checkout information.
+  onModuleInit() {
+    void this.expirePendingPayments().catch((error: unknown) => {
+      this.logger.error(
+        'Initial pending-payment expiration check failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+    });
+
+    this.expirationInterval = setInterval(() => {
+      void this.expirePendingPayments().catch((error: unknown) => {
+        this.logger.error(
+          'Pending-payment expiration check failed',
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+    }, EXPIRATION_CHECK_INTERVAL_MS);
+
+    this.expirationInterval.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.expirationInterval) {
+      clearInterval(this.expirationInterval);
+    }
+  }
+
+  // Atomically expire stale pending payments. Legacy records without expiresAt
+  // use their createdAt timestamp and the same 30-minute policy.
+  async expirePendingPayments() {
+    const now = new Date();
+    const legacyCutoff = new Date(now.getTime() - PAYMENT_EXPIRATION_MS);
+
+    const result = await this.paymentModel.updateMany(
+      {
+        status: PaymentStatus.PENDING,
+        $or: [
+          { expiresAt: { $lte: now } },
+          {
+            expiresAt: { $exists: false },
+            createdAt: { $lte: legacyCutoff },
+          },
+        ],
+      },
+      { $set: { status: PaymentStatus.EXPIRED } },
+    );
+
+    return result.modifiedCount;
+  }
+
   async createPayment(
     courseId: string,
     createPaymentDto: CreatePaymentDto,
     user: { userId: string; email: string; role: UserRole },
   ) {
-    //1.Validate the student and course.
     if (user.role !== UserRole.STUDENT) {
       throw new ForbiddenException(
         "You are not allowed to enroll this course because You aren't student",
       );
     }
-    // 2. Verify that the course exists.
+
     if (!courseId || !mongoose.isValidObjectId(courseId)) {
       throw new BadRequestException('Invalid Course ID');
     }
@@ -51,17 +102,16 @@ export class PaymentsService {
       throw new NotFoundException('Course not found');
     }
 
-    // 3. Verify that the course is published.
     if (course.status !== CourseStatus.PUBLISHED) {
       throw new ForbiddenException(
         "You are not allowed to enroll this course because course isn't published",
       );
     }
-    // 4. Verify that the course is free.
+
     if (course.price === 0) {
       throw new BadRequestException('This course is free');
     }
-    //5. Check for an existing active enrollment
+
     const enrollment = await this.enrollmentsService.checkEnrollment(
       courseId,
       user.userId,
@@ -72,17 +122,16 @@ export class PaymentsService {
       );
     }
 
-    //6. Create a pending Payment using the current course price.
     const payment = new this.paymentModel({
       course: courseId,
       student: user.userId,
       amount: course.price,
       currency: 'EGP',
       status: PaymentStatus.PENDING,
+      expiresAt: new Date(Date.now() + PAYMENT_EXPIRATION_MS),
     });
     await payment.save();
-    //7. Request a Paymob Intention.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
     const { intentionId, orderId, checkoutUrl } =
       await this.paymobService.createIntention({
         paymentId: payment._id.toString(),
@@ -96,36 +145,27 @@ export class PaymentsService {
           phoneNumber: createPaymentDto.phoneNumber,
         },
       });
-    //8. Save the Paymob references and return checkout information.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
     payment.intentionId = intentionId;
     payment.providerOrderId = orderId;
     await payment.save();
+
     return {
       paymentId: payment._id,
       status: payment.status,
+      expiresAt: payment.expiresAt,
       checkoutUrl,
     };
   }
 
-  // Verify and process the Paymob callback.
-  // Match the callback with the correct Payment.
-  // Verify payment amount, currency and transaction details.
-  // Prevent duplicate processing.
-  // Update the Payment status.
-  // Create or reactivate Enrollment after confirmed success.
   async handlePaymobCallback(
     transaction: PaymobTransaction,
     receivedHmac: string,
   ) {
-    // 1. Verify callback authenticity.
-    const isValid = this.paymobService.verifyWebhook(transaction, receivedHmac);
-
-    if (!isValid) {
+    if (!this.paymobService.verifyWebhook(transaction, receivedHmac)) {
       throw new UnauthorizedException('Invalid Paymob webhook signature');
     }
 
-    // 2. Find the payment using Paymob's order ID.
     const payment = await this.paymentModel.findOne({
       providerOrderId: String(transaction.order.id),
       provider: PaymentProvider.PAYMOB,
@@ -135,7 +175,6 @@ export class PaymentsService {
       throw new NotFoundException('Payment not found');
     }
 
-    // 3. Verify payment amount and currency.
     if (
       transaction.amount_cents !== payment.amount * 100 ||
       transaction.currency !== payment.currency
@@ -145,15 +184,10 @@ export class PaymentsService {
       );
     }
 
-    // 4. Ignore pending transactions.
     if (transaction.pending) {
-      return {
-        message: 'Payment is still pending',
-        status: payment.status,
-      };
+      return { message: 'Payment is still pending', status: payment.status };
     }
 
-    // 5. Ignore refund and void events for now.
     if (transaction.is_refunded || transaction.is_voided) {
       return {
         message: 'Refund or void event received',
@@ -163,12 +197,13 @@ export class PaymentsService {
 
     const transactionId = String(transaction.id);
 
-    // 6. Handle duplicate successful callbacks.
-    if (
-      payment.status === PaymentStatus.SUCCESSFUL &&
-      payment.providerTransactionId === transactionId
-    ) {
-      // Retry enrollment in case the previous attempt failed.
+    if (payment.status === PaymentStatus.SUCCESSFUL) {
+      if (payment.providerTransactionId !== transactionId) {
+        throw new ConflictException(
+          'Payment has already been completed with another transaction',
+        );
+      }
+
       await this.enrollmentsService.enrollAfterPayment(
         payment.course.toString(),
         {
@@ -179,64 +214,149 @@ export class PaymentsService {
 
       return {
         message: 'Payment was already processed',
-        status: payment.status,
+        status: PaymentStatus.SUCCESSFUL,
       };
     }
 
-    if (payment.status === PaymentStatus.SUCCESSFUL) {
+    if (!transaction.success || transaction.error_occured) {
+      if (payment.status === PaymentStatus.FAILED) {
+        if (payment.providerTransactionId !== transactionId) {
+          throw new ConflictException(
+            'Payment has already been processed with another transaction',
+          );
+        }
+        return {
+          message: 'Failed payment was already processed',
+          status: PaymentStatus.FAILED,
+        };
+      }
+
+      if (payment.status === PaymentStatus.EXPIRED) {
+        return {
+          message: 'Payment has expired; failed callback ignored',
+          status: PaymentStatus.EXPIRED,
+        };
+      }
+
+      let failedPayment;
+      try {
+        failedPayment = await this.paymentModel.findOneAndUpdate(
+          {
+            _id: payment._id,
+            status: PaymentStatus.PENDING,
+            providerTransactionId: { $in: [null, transactionId] },
+          },
+          {
+            $set: {
+              status: PaymentStatus.FAILED,
+              providerTransactionId: transactionId,
+            },
+          },
+          { new: true },
+        );
+      } catch (error) {
+        if ((error as { code?: number })?.code === 11000) {
+          throw new ConflictException(
+            'Paymob transaction is already linked to another payment',
+          );
+        }
+        throw error;
+      }
+
+      if (failedPayment) {
+        return { message: 'Payment failed', status: failedPayment.status };
+      }
+
+      const currentPayment = await this.paymentModel.findById(payment._id);
+      if (!currentPayment) {
+        throw new NotFoundException('Payment not found');
+      }
+      if (
+        currentPayment.status === PaymentStatus.FAILED &&
+        currentPayment.providerTransactionId === transactionId
+      ) {
+        return {
+          message: 'Failed payment was already processed',
+          status: currentPayment.status,
+        };
+      }
+
+      return {
+        message: 'Payment state changed before this callback was processed',
+        status: currentPayment.status,
+      };
+    }
+
+    // A verified success is accepted even if our local 30-minute deadline has
+    // passed. Provider-confirmed collection takes precedence over local expiry.
+    let successfulPayment;
+    try {
+      successfulPayment = await this.paymentModel.findOneAndUpdate(
+        {
+          _id: payment._id,
+          status: { $in: [PaymentStatus.PENDING, PaymentStatus.EXPIRED] },
+          providerTransactionId: { $in: [null, transactionId] },
+        },
+        {
+          $set: {
+            status: PaymentStatus.SUCCESSFUL,
+            providerTransactionId: transactionId,
+          },
+        },
+        { new: true },
+      );
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) {
+        throw new ConflictException(
+          'Paymob transaction is already linked to another payment',
+        );
+      }
+      throw error;
+    }
+
+    if (!successfulPayment) {
+      const currentPayment = await this.paymentModel.findById(payment._id);
+      if (!currentPayment) {
+        throw new NotFoundException('Payment not found');
+      }
+
+      if (
+        currentPayment.status === PaymentStatus.SUCCESSFUL &&
+        currentPayment.providerTransactionId === transactionId
+      ) {
+        await this.enrollmentsService.enrollAfterPayment(
+          currentPayment.course.toString(),
+          {
+            userId: currentPayment.student.toString(),
+            role: UserRole.STUDENT,
+          },
+        );
+        return {
+          message: 'Payment was already processed',
+          status: currentPayment.status,
+        };
+      }
+
       throw new ConflictException(
-        'Payment has already been completed with another transaction',
+        'Payment state changed before this successful callback was processed',
       );
     }
 
-    // 7. Handle duplicate failed callbacks.
-    if (
-      payment.status === PaymentStatus.FAILED &&
-      payment.providerTransactionId === transactionId
-    ) {
-      return {
-        message: 'Failed payment was already processed',
-        status: payment.status,
-      };
-    }
-
-    // 8. Handle failed transactions.
-    if (!transaction.success || transaction.error_occured) {
-      payment.status = PaymentStatus.FAILED;
-      payment.providerTransactionId = transactionId;
-
-      await payment.save();
-
-      return {
-        message: 'Payment failed',
-        status: payment.status,
-      };
-    }
-
-    // 9. Mark payment as successful.
-    payment.status = PaymentStatus.SUCCESSFUL;
-    payment.providerTransactionId = transactionId;
-
-    await payment.save();
-
-    // 10. Enroll the student in the course.
     await this.enrollmentsService.enrollAfterPayment(
-      payment.course.toString(),
+      successfulPayment.course.toString(),
       {
-        userId: payment.student.toString(),
+        userId: successfulPayment.student.toString(),
         role: UserRole.STUDENT,
       },
     );
 
     return {
       message: 'Payment completed successfully',
-      status: payment.status,
+      status: successfulPayment.status,
     };
   }
 
-  // Return the current student's payment history.
   async findMyPayments(userId: string) {
-    // Validate the student ID.
     if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new BadRequestException('Invalid userId');
     }
@@ -246,9 +366,7 @@ export class PaymentsService {
       .sort({ createdAt: -1 });
   }
 
-  // Find a specific payment belonging to the current student.
   async findOne(paymentId: string, userId: string) {
-    // Validate the student ID.
     if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new BadRequestException('Invalid userId');
     }

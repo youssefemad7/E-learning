@@ -5,6 +5,7 @@ export enum PaymentStatus {
   PENDING = 'pending',
   SUCCESSFUL = 'successful',
   FAILED = 'failed',
+  EXPIRED = 'expired',
 }
 export enum PaymentProvider {
   PAYMOB = 'paymob',
@@ -27,6 +28,12 @@ export class Payment {
 
   @Prop()
   intentionId?: string;
+
+  @Prop({ type: Date, required: true })
+  expiresAt!: Date;
+
+  // Added by Mongoose timestamps; included for legacy pending-payment expiry queries.
+  createdAt?: Date;
 
   @Prop({
     type: String,
@@ -65,3 +72,4 @@ PaymentSchema.index(
 );
 
 PaymentSchema.index({ student: 1, createdAt: -1 });
+PaymentSchema.index({ status: 1, expiresAt: 1 });
