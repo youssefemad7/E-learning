@@ -238,7 +238,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         };
       }
 
-      let failedPayment;
+      let failedPayment: NonNullable<typeof payment> | null = null;
       try {
         failedPayment = await this.paymentModel.findOneAndUpdate(
           {
@@ -289,7 +289,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
     // A verified success is accepted even if our local 30-minute deadline has
     // passed. Provider-confirmed collection takes precedence over local expiry.
-    let successfulPayment;
+    let successfulPayment: NonNullable<typeof payment> | null = null;
     try {
       successfulPayment = await this.paymentModel.findOneAndUpdate(
         {

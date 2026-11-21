@@ -96,9 +96,9 @@ export async function register(
   password: string,
   role: "student" | "instructor",
 ): Promise<AuthResponse> {
-  const data = { name, email, password, role };
-  const { data } = await apiAuth.post<AuthResponse>("/auth/register", data);
-  return data;
+  const payload = { name, email, password, role };
+  const response = await apiAuth.post<AuthResponse>("/auth/register", payload);
+  return response.data;
 }
 // POST /auth/login
 // تستقبل email وpassword، وتبعتهم للباك، وترجع بيانات تسجيل الدخول.
@@ -106,9 +106,9 @@ export async function login(
   email: string,
   password: string,
 ): Promise<AuthResponse> {
-  const data = { email, password };
-  const { data } = await apiAuth.post<AuthResponse>("/auth/login", data);
-  return data;
+  const payload = { email, password };
+  const response = await apiAuth.post<AuthResponse>("/auth/login", payload);
+  return response.data;
 }
 // POST /auth/refresh
 // تطلب تجديد الـ tokens لما الـ access token ينتهي.

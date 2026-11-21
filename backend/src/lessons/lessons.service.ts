@@ -1,4 +1,4 @@
-import mongoose, { Model } from 'mongoose';
+import mongoose, { HydratedDocument, Model } from 'mongoose';
 import {
   BadRequestException,
   ForbiddenException,
@@ -23,7 +23,7 @@ export class LessonsService {
   ) {}
 
   private async requestReviewAfterInstructorEdit(
-    course: Course,
+    course: HydratedDocument<Course>,
     user: { userId: string; role: UserRole },
   ) {
     if (
