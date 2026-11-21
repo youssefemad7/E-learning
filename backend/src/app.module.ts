@@ -9,6 +9,7 @@ import { CoursesModule } from './courses/courses.module';
 import { CategoriesModule } from './categories/categories.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -35,6 +36,8 @@ import { EnrollmentsModule } from './enrollments/enrollments.module';
     LessonsModule,
 
     EnrollmentsModule,
+
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -210,4 +210,64 @@ export class EnrollmentsService {
     }
     return false;
   }
+  // TODO:
+  // - Verify that the user is a student.
+  // - Verify that the course exists.
+  // - Check whether an enrollment already exists.
+  // - If an active enrollment exists,return it.
+  // - If a cancelled enrollment exists, reactivate it.
+  // - Otherwise, create a new enrollment.
+  async enrollAfterPayment(
+    courseId: string,
+    user: { userId: string; role: UserRole },
+  ) {
+    //1. Verify that the user is a student.
+
+    if (user.role !== UserRole.STUDENT) {
+      throw new ForbiddenException(
+        "You are not allowed to enroll this course because You aren't student",
+      );
+    }
+    // 2. Verify that the course exists.
+    if (!courseId || !mongoose.isValidObjectId(courseId)) {
+      throw new BadRequestException('Invalid Course ID');
+    }
+
+    const course = await this.courseModel.findById(courseId);
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+    const enrollment = await this.enrollmentModel.findOne({
+      student: user.userId,
+      course: courseId,
+    });
+
+    // 3. Check whether an enrollment already exists, If an active enrollment exists,return it.
+
+    if (enrollment && enrollment.status === EnrollmentStatus.ACTIVE) {
+      return enrollment;
+    }
+    // 4. If a cancelled enrollment exists, reactivate it.
+    if (enrollment && enrollment.status === EnrollmentStatus.CANCELLED) {
+      enrollment.status = EnrollmentStatus.ACTIVE;
+      enrollment.enrolledAt = new Date();
+      enrollment.cancelledAt = null;
+    }
+    // 5. Otherwise, create a new enrollment.
+
+    try {
+      if (enrollment) {
+        return await enrollment.save();
+      }
+      return await this.enrollmentModel.create({
+        course: courseId,
+        student: user.userId,
+      });
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) {
+        throw new ConflictException('You are already enrolled in this course');
+      }
+      throw error;
+    }
+  }
 }

@@ -33,7 +33,7 @@ export class Course {
   @Prop({ required: true, trim: true })
   thumbnail!: string;
 
-  @Prop({ required: true, min: 0 })
+  @Prop({ required: true, min: 0, validate: Number.isInteger })
   price!: number;
 
   @Prop({
