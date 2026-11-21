@@ -43,8 +43,11 @@ export class LessonsController {
     return this.lessonsService.findAllLessons(courseId, req.user);
   }
   @Get('single/:lessonId')
-  findOneLesson(@Param('lessonId') lessonId: string) {
-    return this.lessonsService.findOneLesson(lessonId);
+  findOneLesson(
+    @Param('lessonId') lessonId: string,
+    @Req() req: { user: { userId: string; role: UserRole } },
+  ) {
+    return this.lessonsService.findOneLesson(lessonId, req.user);
   }
 
   @UseGuards(RolesGuard)
