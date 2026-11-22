@@ -253,9 +253,7 @@ export class LessonsService {
 
     // Only students can access preview lessons without enrollment.
     if (user.role !== UserRole.STUDENT) {
-      throw new ForbiddenException(
-        'You are not allowed to access this lesson',
-      );
+      throw new ForbiddenException('You are not allowed to access this lesson');
     }
 
     if (lesson.isPreview) {

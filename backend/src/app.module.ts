@@ -10,6 +10,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { PaymentsModule } from './payments/payments.module';
+import { ProgressModule } from './progress/progress.module';
 
 @Module({
   imports: [
@@ -38,6 +39,8 @@ import { PaymentsModule } from './payments/payments.module';
     EnrollmentsModule,
 
     PaymentsModule,
+
+    ProgressModule,
   ],
   controllers: [AppController],
   providers: [AppService],
