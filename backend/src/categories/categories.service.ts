@@ -199,7 +199,9 @@ export class CategoriesService {
     const normalizedName: string =
       name !== undefined
         ? name.trim().toLowerCase()
-        : (category.normalizedName ?? category.name?.trim().toLowerCase() ?? '');
+        : (category.normalizedName ??
+          category.name?.trim().toLowerCase() ??
+          '');
 
     if (!normalizedName) {
       throw new BadRequestException('Category name cannot be empty');

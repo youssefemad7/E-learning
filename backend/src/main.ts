@@ -42,6 +42,6 @@ async function bootstrap() {
   // SwaggerModule.setup('api/docs', app, document); // المسار سيكون /api/docs
   // -------------------------
 
-  await app.listen(configService.getOrThrow<string>('PORT'));
+  await app.listen(Number(configService.getOrThrow<string>('PORT')));
 }
 bootstrap();
